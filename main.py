@@ -6,6 +6,7 @@ import cv2
 
 class FaceDetector:
     def __init__(self):
+        # 这个字典用于将esp32的ip地址对应一个request。这个request可用于请求esp32当前捕获的图片
         self.ip2request = {}
 
     def on_message(self, client, userdata, msg):
