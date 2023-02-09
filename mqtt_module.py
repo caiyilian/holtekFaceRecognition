@@ -22,7 +22,9 @@ pubTopic = {
 # 连接并订阅
 def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
-    client.subscribe("2")  # 订阅消息
+    # 订阅消息
+    for topic in subTopic.values():
+        client.subscribe(topic)
 
 
 # 订阅成功
