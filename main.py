@@ -36,8 +36,8 @@ class FaceDetector:
             # 先向所有esp32-cam发送测试消息。如果他们在线的话就会回复，话题是指定的，但是内容随便，所以这里内容就随便写了个12138
             self.publish(pubTopic["test_esp32_online"], "12138")
             # 第二步向我们团队服务器请求获取所有核酸检测记录，并把这些记录发送给小程序
-
             pass
+
         elif msg_topic == subTopic["get_ip"]:
             """
             此时是某个esp32-cam刚开机。然后他会把他的ip地址发送给我们,此时msg_content就是它的ip地址
@@ -50,7 +50,18 @@ class FaceDetector:
             此时是需要对当前esp32-cam捕获的图像进行人脸识别，返回识别结果
             识别结果包括姓名、学/工号、健康码情况
             """
-            pass
+            # esp32会把他的ip地址发送过来，我们根据ip地址就可以从self.ip2request取出对应的request来获取图片
+            img = self.rec_img(self.ip2request[msg_content])
+            # 把这张图片送到人脸识别算法里面进行人脸识别
+            # 这里不一定是一张图片，如果需要的话你可以获取多张图片一起进行一次人脸识别（如果这样可以提高识别的准确率的话）
+            result  = self.face_recognition(img)
+            if result is False:
+                # 如果没有检测到人的话
+                pass
+            else:
+                # 如果检测到人的话
+                name, number, health_code = result
+
         elif msg_topic == subTopic["get_temperature"]:
             """
             此时是测量完体温了，esp32把体温信息发送给我们
@@ -87,6 +98,14 @@ class FaceDetector:
         :return:
         """
         mqtt_client.publish(topic, msg)
+
+    def face_recognition(self, img):
+        """
+        输入一张图片进行人脸识别，返回识别的结果
+        :param img: 输入的一张图片
+        :return: 识别的结果：姓名、学/工号、健康码情况（正常或者不正常）,如果图片中没有人脸或者人脸不在数据库中就返回False
+        """
+        pass
 
 
 faceDetector = FaceDetector()
