@@ -2,87 +2,176 @@ from mqtt_module import mqtt_client, subTopic, pubTopic
 import requests
 import numpy as np
 import cv2
+import json
+import os
 
 
 class FaceDetector:
     def __init__(self):
-        # 这个字典用于将esp32的ip地址对应一个request。这个request可用于请求esp32当前捕获的图片
-        self.ip2request = {}
+        # 团队服务器ip地址
+        self.team_server = "http://42.192.82.19:5555/"
+
+        # 温度阈值，高于这个值就算温度过高
+        self.temp_threshold = 37.3
+
+        # 一个管子容纳的核酸检测样本数量，一般都是一个管子有十个样本
+        self.pipe_num = 10
 
     def on_message(self, client, userdata, msg):
         """
         接收到mqtt服务器转发的消息时。执行的函数
         我们只会收到几个话题：
         第一个是小程序想获取所有在线的esp32-cam设备和核酸检测记录。
-        第二个是esp32-cam刚开机的时候。会把ip地址发送给我们。
-        第三个是esp32-cam请求进行人脸识别
-        第四个是esp32-cam发送体温给我们
-        第五个是esp32-cam把返回他们的在线信息
+        第二个是esp32向我们本地服务器发送消息
         :param client: 这个就是外面的那个mqtt_client
         :param userdata: 这个基本上应该没什么用
         :param msg: 这个是接收到的内容。包括收到的消息话题和消息内容
         :return:
         """
-        # 消息的主题
-        msg_topic = msg.topic
         # 消息的内容
         msg_content = str(msg.payload.decode('utf-8'))
-        if msg_topic == subTopic["wechat_get_info"]:
+        # 这个话题表示esp32发消息给我们，根据消息内容有如下几种情况
+        if "get_record:" in msg_content:
             """
-            此时某个设备的小程序刚开启。他想要获取目前所有在线的esp32-cam和累计到现在的所有核酸检测记录
-            获取所有在线的esp32-cam很简单。只需要对一个用于测试当前设备在线个数的话题发送信息，查看给定时间范围内回复的消息数量就行
-            获取所有核酸检测记录的话。只需要请求我们团队的服务器即可。我打算把所有核酸检测记录存放在我们团队的服务器上面
+            此时是小程序想要获取核酸检测信息。我们需要到团队服务器上去请求数据发送给小程序
             """
-            # 先向所有esp32-cam发送测试消息。如果他们在线的话就会回复，话题是指定的，但是内容随便，所以这里内容就随便写了个12138
-            self.publish(pubTopic["test_esp32_online"], "12138")
-            # 第二步向我们团队服务器请求获取所有核酸检测记录，并把这些记录发送给小程序
-            pass
+            # 先从服务器上获取核酸检测记录
+            res = requests.get(f"{self.team_server}getRecord/?now={msg_content[11:]}").json()
+            # 把从服务器上获取到的核酸检测记录转发给小程序
+            res["mode"] = "record"
+            self.publish(pubTopic["send2wechat"], json.dumps(res))
 
-        elif msg_topic == subTopic["get_ip"]:
-            """
-            此时是某个esp32-cam刚开机。然后他会把他的ip地址发送给我们,此时msg_content就是它的ip地址
-            我们需要做的就是把这个ip地址存起来，放在self.ip2request这个字典里面，便于我们后面调用
-            """
-            self.ip2request[msg_content] = requests.get(f"http://{msg_content}:81/stream", stream=True)
 
-        elif msg_topic == subTopic["face_recognition"]:
+        elif "face_recognition:" in msg_content:
             """
             此时是需要对当前esp32-cam捕获的图像进行人脸识别，返回识别结果
-            识别结果包括姓名、学/工号、健康码情况
+            识别结果包括姓名、学/工号、健康码情况（这三个信息暂时存在一个变量里面）
+            但是发送回去给esp32的只需要是健康码的情况就行
             """
+            # 设备ip地址
+            ip = msg_content[17:msg_content.rfind(":")]
+            # 设备名
+            eqName = msg_content[msg_content.rfind(":") + 1:]
+
             # esp32会把他的ip地址发送过来，我们根据ip地址就可以从self.ip2request取出对应的request来获取图片
-            img = self.rec_img(self.ip2request[msg_content])
+            img = self.rec_img(ip)
             # 把这张图片送到人脸识别算法里面进行人脸识别
-            # 这里不一定是一张图片，如果需要的话你可以获取多张图片一起进行一次人脸识别（如果这样可以提高识别的准确率的话）
-            result  = self.face_recognition(img)
+            # 这里不一定是一张图片，如果需要的话你可以获取多张图片一起进行一次人脸识别,自行修改（如果这样可以提高识别的准确率的话）
+            result = self.face_recognition(img)
+
             if result is False:
-                # 如果没有检测到人的话
-                pass
+                # 如果没有识别出来的话，给esp32发送None表示没有识别出来
+                self.publish(pubTopic['send2esp32'], "face_recognition_result:None")
+
             else:
                 # 如果检测到人的话
-                name, number, health_code = result
+                name, number, healthCode = result
 
-        elif msg_topic == subTopic["get_temperature"]:
+                if healthCode == "不正常":
+                    # 如果健康码不是绿码也就是不正常，发送给esp32消息False表明健康码不正常
+                    self.publish(pubTopic['send2esp32'], "face_recognition_result:False")
+
+                else:
+                    # 健康码正常，发送给esp32消息True表明健康码不正常
+                    self.publish(pubTopic['send2esp32'], "face_recognition_result:True")
+
+                    # 下面就是把识别到的结果（姓名、号码）记录起来
+                    if os.path.exists("testing/" + eqName + ".txt"):
+                        file = open("testing/" + eqName + ".json", "r", encoding="utf-8")
+                        # 还没出结果的核酸检测记录（也就是正在进行中的核酸检测记录）
+                        try:
+                            # 如果文件存在且不是空，那就把里面的json格式的内容读出来,是一个列表，列表里面是一个个字典
+                            testing_record = json.loads(file.read())
+                        except:
+                            # 如果文件为空
+                            testing_record = []
+                        file.close()
+                    else:
+                        # 如果文件不存在
+                        testing_record = []
+
+                    # 向这个列表中添加一条记录
+                    testing_record.append({
+                        "name": name,
+                        "number": number
+                    })
+
+                    # 把添加后的列表重新写入json文件中
+                    with open("testing/" + eqName + ".json", "w", encoding="utf-8") as file:
+                        file.write(json.dumps(testing_record, indent=4, ensure_ascii=False))
+
+        elif "get_temperature:" in msg_content:
             """
             此时是测量完体温了，esp32把体温信息发送给我们
             """
-            pass
+            eqName = msg_content[16:msg_content.rfind(":")]
+            temperature = msg_content[msg_content.rfind(":") + 1:]
+            # 这里直接读取文件，不错报错处理，因为实际过程中肯定是先人脸识别之后把姓名、号码、健康码状况写入文件后才进行体温测量，所以不可能不存在这个文件或者文件内容为空
+            with open("testing/" + eqName + ".json", "r", encoding="utf-8") as file:
+                testing_record = json.loads(file.read())
 
-    def rec_img(self, request):
+            if int(temperature) > self.temp_threshold:
+                # 如果温度过高，就要删除这条记录(也就是最后一条记录)，然后让这个同学去一旁留下观察
+                testing_record.pop()
+
+            else:
+                # 遍历列表，找到还没有录入温度的那条记录，这个温度就是属于那一条记录的
+                for index, each_record in enumerate(testing_record):
+                    if each_record.get("temperature") is None:
+                        break
+
+                # 这里index飘黄，但是实际正常情况是一定能找到那个index所以如果真的报错就是逻辑有问题
+                testing_record[index]["temperature"] = temperature
+
+            # 把添加/删除后的列表重新写入json文件中
+            with open("testing/" + eqName + ".json", "w", encoding="utf-8") as file:
+                file.write(json.dumps(testing_record, indent=4, ensure_ascii=False))
+
+
+        elif "get_result:" in msg_content:
+            """
+            此时是一个管子的核酸检测结果出来了，假设一个管子最多有10个人的核酸检测
+            """
+            # 设备名
+            eqName = msg_content[11:msg_content.rfind(":")]
+            # 最新一个管子的核酸检测结果
+            result = msg_content[msg_content.rfind(":") + 1:]
+
+            # 这里同样直接读取文件，不进行报错处理，正常情况就不会报错
+            with open("testing/" + eqName + ".json", "r", encoding="utf-8") as file:
+                testing_record = json.loads(file.read())
+
+            # 给前面的十条记录添加一个result值也就是核酸检测的结果
+            tested_record = testing_record[:self.pipe_num]
+            for i in range(len(tested_record)):
+                tested_record[i]["result"] = result
+
+            # 把这十条已经出结果的核酸检测记录更新到团队服务器上
+            res = requests.post(f"{self.team_server}addRecord/", data=json.dumps(tested_record),
+                                headers={"content-type": "application/json"})
+
+            # 删除json文件中前面十条记录（如果少于十条记录那就把剩下的记录删除）
+            del testing_record[:self.pipe_num]
+
+            # 把删除后的列表重新写入json文件中
+            with open("testing/" + eqName + ".json", "w", encoding="utf-8") as file:
+                file.write(json.dumps(testing_record, indent=4, ensure_ascii=False))
+
+    def rec_img(self, ip):
         """
         获取esp32当前捕获的图片
-        :param request: 用于获取指定esp32的图片
+        :param ip: 用于获取指定esp32的图片
         :return: esp32当前捕获的图片
         """
-
+        res = requests.get(f"http://{ip}:81/stream", stream=True)
         while True:
-            if request.raw.readline() == b'\r\n' and request.raw.readline() == b'--123456789000000000000987654321\r\n':
-                request.raw.readline()
+            if res.raw.readline() == b'\r\n' and res.raw.readline() == b'--123456789000000000000987654321\r\n':
+                res.raw.readline()
                 # 图片的字节流的长度
-                length = request.raw.readline()[16:-2]
-                request.raw.readline()
+                length = res.raw.readline()[16:-2]
+                res.raw.readline()
                 # 在这之前都是类似于响应头，这些信息用处不大，除了那个长度，下面这个才是整个图片
-                img_data = request.raw.read(int(length))
+                img_data = res.raw.read(int(length))
 
                 array = np.frombuffer(img_data, dtype=np.uint8)
 
@@ -103,7 +192,7 @@ class FaceDetector:
         """
         输入一张图片进行人脸识别，返回识别的结果
         :param img: 输入的一张图片
-        :return: 识别的结果：姓名、学/工号、健康码情况（正常或者不正常）,如果图片中没有人脸或者人脸不在数据库中就返回False
+        :return: 识别的结果：姓名、学/工号、健康码情况（正常/不正常）,如果图片中没有人脸或者人脸不在数据库中就返回False
         """
         pass
 
