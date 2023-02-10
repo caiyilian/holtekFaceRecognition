@@ -149,6 +149,9 @@ class FaceDetector:
             # 把这十条已经出结果的核酸检测记录更新到团队服务器上
             res = requests.post(f"{self.team_server}addRecord/", data=json.dumps(tested_record),
                                 headers={"content-type": "application/json"})
+            
+            # 提醒小程序当前的核酸检测记录已经更新         
+            self.publish(pubTopic["send2wechat"], '{"mode":"update"}')
 
             # 删除json文件中前面十条记录（如果少于十条记录那就把剩下的记录删除）
             del testing_record[:self.pipe_num]
