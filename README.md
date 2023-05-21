@@ -1,3 +1,2 @@
 # holtekFaceRecognition
-用于合泰比赛的人脸识别模块
-$\hat{x}$ 
+用于合泰比赛的人脸识别模块和本地服务器
