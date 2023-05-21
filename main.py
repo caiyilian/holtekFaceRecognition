@@ -4,8 +4,22 @@ import numpy as np
 import cv2
 import json
 import os
-
-
+import socket
+eqNameDict = {}
+# ip:192.168.1.104:002
+def get_host_ip():
+    """
+    查询本机ip地址
+    :return: ip
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+    finally:
+        s.close()
+        return ip
+local_ip = get_host_ip()
 class FaceDetector:
     def __init__(self):
         # 团队服务器ip地址
@@ -31,15 +45,27 @@ class FaceDetector:
         # 消息的内容
         msg_content = str(msg.payload.decode('utf-8'))
         # 这个话题表示esp32发消息给我们，根据消息内容有如下几种情况
+        if "IP" not in msg_content:
+            print("msg_content=", msg_content)
         if "get_record:" in msg_content:
             """
             此时是小程序想要获取核酸检测信息。我们需要到团队服务器上去请求数据发送给小程序
             """
+            return
             # 先从服务器上获取核酸检测记录
+            print("get")
             res = requests.get(f"{self.team_server}getRecord/?now={msg_content[11:]}").json()
             # 把从服务器上获取到的核酸检测记录转发给小程序
             res["mode"] = "record"
+            # {"mode":"record","list":[{name:"张三",number:"20203231036",healthCode:"正常",temperature:36.2,time:"2023-5-4",result:"阴性"}], "total":1, "now":1}
             self.publish(pubTopic["send2wechat"], json.dumps(res))
+        elif msg_content == "online":
+            # {"mode":"online", "name":设备名}
+            Dict = {}
+            Dict['mode'] = "online"
+            for name in eqNameDict.keys():
+                Dict["name"] = name
+                self.publish(pubTopic["send2wechat"], json.dumps(Dict))
 
 
         elif "face_recognition:" in msg_content:
@@ -49,10 +75,11 @@ class FaceDetector:
             但是发送回去给esp32的只需要是健康码的情况就行
             """
             # 设备ip地址
-            ip = msg_content[17:msg_content.rfind(":")]
+            # ip = msg_content[17:msg_content.rfind(":")]
             # 设备名
             eqName = msg_content[msg_content.rfind(":") + 1:]
-
+            # 设备ip地址
+            ip = eqNameDict[eqName]
             # esp32会把他的ip地址发送过来，我们根据ip地址就可以从self.ip2request取出对应的request来获取图片
             img = self.rec_img(ip)
             # 把这张图片送到人脸识别算法里面进行人脸识别
@@ -149,8 +176,8 @@ class FaceDetector:
             # 把这十条已经出结果的核酸检测记录更新到团队服务器上
             res = requests.post(f"{self.team_server}addRecord/", data=json.dumps(tested_record),
                                 headers={"content-type": "application/json"})
-            
-            # 提醒小程序当前的核酸检测记录已经更新         
+
+            # 提醒小程序当前的核酸检测记录已经更新
             self.publish(pubTopic["send2wechat"], '{"mode":"update"}')
 
             # 删除json文件中前面十条记录（如果少于十条记录那就把剩下的记录删除）
@@ -159,6 +186,22 @@ class FaceDetector:
             # 把删除后的列表重新写入json文件中
             with open("testing/" + eqName + ".json", "w", encoding="utf-8") as file:
                 file.write(json.dumps(testing_record, indent=4, ensure_ascii=False))
+
+        elif msg_content == "get_ip":
+            print("发送ip地址给esp32")
+            self.publish(pubTopic["send2esp32"], "ip:"+local_ip)
+        elif "IP:" in msg_content:
+            eqName = msg_content[3:msg_content.rfind(":")]
+            ip = msg_content[msg_content.rfind(":")+1:]
+            eqNameDict[eqName] = ip
+            # data = {}
+            # data["eqName"] = eqName
+            # data['ip'] = ip
+            # print("http://"+local_ip+":8000/getIp/?"+eqName+"="+ip)
+            try:
+                requests.get("http://"+local_ip+":8000/getIp/?"+eqName+"="+ip)
+            except:
+                print("出错了")
 
     def rec_img(self, ip):
         """

@@ -1,0 +1,82 @@
+[
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.6",
+        "time": "2023-05-17",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.4",
+        "time": "2023-05-17",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.3",
+        "time": "2023-05-17",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.6",
+        "time": "2023-05-17",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.7",
+        "time": "2023-05-17",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.3",
+        "time": "2023-05-18",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "37.1",
+        "time": "2023-05-18",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.2",
+        "time": "2023-05-18",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.4",
+        "time": "2023-05-18",
+        "result": "阴性"
+    },
+    {
+        "name": "蔡依炼",
+        "number": "2020001",
+        "healthCode": "正常",
+        "temperature": "36.2",
+        "time": "2023-05-18",
+        "result": "阴性"
+    }
+]
