@@ -1,2 +1,2 @@
 # holtekFaceRecognition
-用于合泰比赛的人脸识别模块和本地服务器
+用于合泰比赛的人脸识别模块和本地服务器还有esp8266和esp32-cam的代码
